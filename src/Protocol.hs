@@ -6,12 +6,16 @@ module Protocol
 import System.IO
 import System.Posix.Process
 import Data.Aeson
+import Data.Vector
+import Data.Maybe
 import Control.Applicative ((<$>), (<*>), empty)
 import Control.Monad (liftM)
 import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.Text as DT
 
 --module written according to worker protocol section in documentation
 
+--TODO pipeline + map shuffle
 -- messages from the Worker to Disco
 -- WORKER message, announce the startup of the worker.
 version :: String
@@ -29,25 +33,26 @@ instance ToJSON Worker_info where
 
 -- TASK message, Worker sends it without payload
 -- request the task information from disco
-data Task_stage = Map | Reduce deriving (Show, Eq)
+data Task_stage = Map | Reduce | Map_shuffle deriving (Show, Eq)
 
 instance ToJSON Task_stage where
     toJSON Map = String "map"
     toJSON Reduce = String "reduce"
+    toJSON Map_shuffle = String "Map_shuffle"
 
 data Task = Task {
-    host :: String,
+    taskid :: Int,
     master :: String,
-    jobname :: String,
-    task_id :: Int,
-    stage :: Task_stage, --map, reduce
---    grouping :: String, -- not in docs TODO pipeline
---    group :: String, -- not in docs TODO pipeline
     disco_port :: Int, -- DISCO_PORT
     put_port :: Int, -- DDFS_PUT_PORT
-    disco_data :: String, -- DISCO_DATA
     ddfs_data :: String, -- DDFS_DATA
-    jobfile :: String -- path to the job pack file
+    disco_data :: String, -- DISCO_DATA
+    stage :: Task_stage, --map, reduce, map_shuffle
+    grouping :: String, -- not in docs TODO pipeline
+    group :: (Int,String), -- not in docs TODO pipeline TODO not tuple, another type? like replica
+    jobfile :: String, -- path to the job pack file
+    jobname :: String,
+    host :: String
 } deriving (Show, Eq)
 
 parse_task_stage :: String -> Task_stage
@@ -55,21 +60,24 @@ parse_task_stage ts =
     case ts of
         "map" -> Map
         "reduce" -> Reduce
+        "map_shuffle" -> Map_shuffle
 --TODO ----------------------------------------------------------------------------------
 instance FromJSON Task where
     parseJSON (Object v) =
         Task <$>
-        (v .: "host") <*>
+        (v .: "taskid") <*>
         (v .: "master") <*>
-        (v .: "jobname") <*>
-        (v .: "task_id") <*>
-        liftM parse_task_stage (v .: "stage") <*>
         (v .: "disco_port") <*>
         (v .: "put_port") <*>
-        (v .: "disco_data") <*>
         (v .: "ddfs_data") <*>
-        (v .: "jobfile")
-    parseJSON _ = empty
+        (v .: "disco_data") <*>
+        liftM parse_task_stage (v .: "stage") <*>
+        (v .: "grouping") <*>
+        (v .: "group") <*>
+        (v .: "jobfile") <*>
+        (v .: "jobname") <*>
+        (v .: "host")
+    parseJSON _ = Control.Applicative.empty
 -----------------------------------------------------------------------------------------
 -- ocaml: group_label, group_node
 
@@ -84,11 +92,12 @@ data Replica = Replica {
 } deriving (Show, Eq)
 --TODO DISCO RETRY MSG ------------------------------------------------------------------
 instance FromJSON Replica where
-    parseJSON (Object v) =
-        Replica <$>
-        (v .: "replica_id") <*> --TODO not exactly, think about it
-        (v .: "replica_location")
-    parseJSON _ = empty
+    parseJSON (Array v) = do
+        let rid:rloc:_ = Data.Vector.toList v --NEIN
+        let Success rep_id = fromJSON rid :: Result Int --TODO write it nicely
+        let Success rep_loc = fromJSON rloc :: Result String
+        return $ Replica rep_id rep_loc
+    parseJSON _ = Control.Applicative.empty --TODO
 -----------------------------------------------------------------------------------------
 
 --TODO maybe use it in replica location
@@ -103,6 +112,13 @@ instance FromJSON Replica where
 data Input_flag = More | Done deriving (Show, Eq) --kept in M_task_input
 data Input_status = Ok | Busy | Failed deriving (Show, Eq)
 
+--TODO 
+instance FromJSON Input_flag where
+    parseJSON (String iflag) = do
+        let fl = parse_input_flag (DT.unpack iflag)
+        return fl
+    parseJSON _ = Control.Applicative.empty --TODO
+
 parse_input_flag :: String -> Input_flag
 parse_input_flag iflag =
     case iflag of
@@ -115,23 +131,57 @@ parse_input_status istat =
         "ok" -> Ok
         "busy" -> Busy
         "failed" -> Failed
+--TODO 
+instance FromJSON Input_status where
+    parseJSON (String istat) = do
+        let st = parse_input_status (DT.unpack istat)
+        return st
+    parseJSON _ = Control.Applicative.empty --TODO
 
 data Input = Input {
     input_id :: Int,
     status :: Input_status, -- ok, busy, failed
---    input_label :: Int, -- TODO not in docs, pipeline again
+    input_label :: Int, -- TODO not in docs, pipeline again
+--    input_flag :: Input_flag, --TODO maybe, or maybe not problem with more, if there is more you can 'modify' (not really, functional) record or you can have multiple records with the same ids
     replicas :: [Replica]
 } deriving (Show, Eq)
 --TODO ----------------------------------------------------------------------------------
+--it works ;)
 instance FromJSON Input where
-    parseJSON (Object v) =
-        Input <$>
-        (v .: "input_id") <*>
-        liftM parse_input_status (v .: "status") <*>
-        (v .: "replicas")--TODO nested type
-    parseJSON _ = empty
------------------------------------------------------------------------------------------
+    parseJSON (Array v) = do
+        let iid:stat:lab:rep:_ = Data.Vector.toList v
+        let Success in_id = fromJSON iid :: Result Int
+        let Success in_stat = fromJSON stat :: Result Input_status
+        let Success in_lab = fromJSON lab :: Result Int
+        let Success in_rep = fromJSON rep :: Result [Replica]
+        return $ Input in_id in_stat in_lab in_rep
+--        return $ Input 1 Ok 2 [Replica 1 "cos"]
+    parseJSON _ = Control.Applicative.empty
+-------------------------------------------------------------------------------------------
 --
+--TODO ----------------------------------------------------------------------------------
+--instance FromJSON Input where
+--    parseJSON (Object v) =
+--        Input <$>
+--        (v .: "input_id") <*>
+--        liftM parse_input_status (v .: "status") <*>
+--        (v .: "replicas")--TODO nested type
+--    parseJSON _ = empty
+-----------------------------------------------------------------------------------------
+
+data Task_input = Task_input {
+    input_flag :: Input_flag,
+    inputs :: [Input]
+} deriving (Show, Eq)
+--it works, again dirty, quick
+instance FromJSON Task_input where
+    parseJSON (Array v) = do
+        let t_flag = Data.Vector.head v
+        let [ins] = (Data.Vector.toList . Data.Vector.tail) v --TODO bad idea
+        let Success flag = fromJSON t_flag :: Result Input_flag
+        let Success inp = fromJSON ins :: Result [Input]
+        return $ Task_input flag inp
+    parseJSON _ = Control.Applicative.empty
 
 --['exclude', [input_id]] or ['include', [input_id]] or ""
 data Worker_input_msg = Exclude [Int] | Include [Int] | Empty deriving (Show, Eq)
@@ -152,16 +202,16 @@ instance ToJSON Output_type where
 data Output = Output {
     output_label :: Int, --TODO check type
     output_location :: String,
---    output_size :: Int, -- TODO
-    output_type :: Output_type
+    output_size :: Integer
+--    output_type :: Output_type
 } deriving (Show, Eq)
 
 --TODO maybe other solution
-data Worker = Worker {
-    task :: Task,
-    inputs :: [Input],
-    outputs :: [Output]
-} deriving (Show, Eq)
+--data Worker = Worker {
+--    task :: Task,
+--    inputs :: [Input],
+--    outputs :: [Output]
+--} deriving (Show, Eq)
 
 data Worker_msg
      = W_worker
@@ -180,7 +230,8 @@ data Master_msg
     = M_ok
     | M_die
     | M_task Task
-    | M_task_input Input_flag Input
+--    | M_task_input Input_flag Input
+    | M_task_input Task_input
     | M_retry [Replica]
     | M_fail
     | M_wait Int deriving (Show, Eq)
@@ -209,7 +260,7 @@ prep_input_err :: Input_err -> BL.ByteString
 prep_input_err (Input_err ie_id xs) = encode (ie_id, xs)
 
 prep_output :: Output -> BL.ByteString 
-prep_output (Output label location o_type) = encode (location, o_type, label)
+prep_output (Output label location o_size) = encode (label, location, o_size)
 
 -- TODO write it with error handling
 prepare_msg :: Worker_msg -> (String, BL.ByteString)
@@ -241,8 +292,8 @@ send wm = do
 -- TODO buffering
 recive :: IO (Maybe Master_msg)
 recive = do
-    hSetBuffering stdin LineBuffering
-    in_msg  <- hGetLine stdin
+--    hSetBuffering stdin LineBuffering
+    in_msg  <- getLine
     let [msg, payload_len, payload] = words in_msg
     return $ process_master_msg msg payload
 --TODO
@@ -250,10 +301,10 @@ recive = do
 exchange_msg :: Worker_msg -> IO (Maybe Master_msg)
 exchange_msg wm = do
     send wm
-    hFlush stdout
+    hFlush stderr
     recive
 
---TODO it's a lie, this function won't look like this (where condition), because I need split the message while reciving it
+--TODO errors
 process_master_msg :: String -> String -> Maybe Master_msg
 process_master_msg msg payload = 
     case msg of
@@ -261,9 +312,8 @@ process_master_msg msg payload =
         "DIE" -> Just M_die
         "TASK" -> fmap M_task $ (decode . BL.pack) payload
         "FAIL" -> Just M_fail
-        "RETRY" -> fmap M_retry $ (decode . BL.pack) payload
+        "RETRY" -> fmap M_retry (((decode . BL.pack) payload) :: Maybe [Replica]) --TODO brackets
         "WAIT" -> Just $ M_wait $ read payload --TODO errors
---        "INPUT" -> fmap M_task_input $ (decode . BL.pack) payload -- TODO input flag parsing
---    where
---        msg : payload_len : payload = words master_msg --TODO think about it, perform two breaks on space character? 
+        "INPUT" -> fmap M_task_input ((decode . BL.pack) payload :: Maybe Task_input)-- TODO brackets
+        _ -> Nothing
 
