@@ -48,8 +48,8 @@ data Task = Task {
     ddfs_data :: String, -- DDFS_DATA
     disco_data :: String, -- DISCO_DATA
     stage :: Task_stage, --map, reduce, map_shuffle
-    grouping :: String, -- not in docs TODO pipeline
-    group :: (Int,String), -- not in docs TODO pipeline TODO not tuple, another type? like replica
+    grouping :: String, -- The grouping specified in the pipeline for the above stage.
+    group :: (Int,String), -- The group this task will get its inputs from, as computed by the grouping. TODO type
     jobfile :: String, -- path to the job pack file
     jobname :: String,
     host :: String
@@ -79,7 +79,6 @@ instance FromJSON Task where
         (v .: "host")
     parseJSON _ = Control.Applicative.empty
 -----------------------------------------------------------------------------------------
--- ocaml: group_label, group_node
 
 -- INPUT message, Worker sends it without payload
 -- or exclude, include
@@ -117,7 +116,7 @@ instance FromJSON Input_flag where
     parseJSON (String iflag) = do
         let fl = parse_input_flag (DT.unpack iflag)
         return fl
-    parseJSON _ = Control.Applicative.empty --TODO
+    parseJSON _ = Control.Applicative.empty
 
 parse_input_flag :: String -> Input_flag
 parse_input_flag iflag =
@@ -131,22 +130,20 @@ parse_input_status istat =
         "ok" -> Ok
         "busy" -> Busy
         "failed" -> Failed
---TODO 
+
 instance FromJSON Input_status where
     parseJSON (String istat) = do
         let st = parse_input_status (DT.unpack istat)
         return st
-    parseJSON _ = Control.Applicative.empty --TODO
+    parseJSON _ = Control.Applicative.empty
 
 data Input = Input {
     input_id :: Int,
     status :: Input_status, -- ok, busy, failed
-    input_label :: Int, -- TODO not in docs, pipeline again
---    input_flag :: Input_flag, --TODO maybe, or maybe not problem with more, if there is more you can 'modify' (not really, functional) record or you can have multiple records with the same ids
+    input_label :: Int,
     replicas :: [Replica]
 } deriving (Show, Eq)
 --TODO ----------------------------------------------------------------------------------
---it works ;)
 instance FromJSON Input where
     parseJSON (Array v) = do
         let iid:stat:lab:rep:_ = Data.Vector.toList v
@@ -155,7 +152,6 @@ instance FromJSON Input where
         let Success in_lab = fromJSON lab :: Result Int
         let Success in_rep = fromJSON rep :: Result [Replica]
         return $ Input in_id in_stat in_lab in_rep
---        return $ Input 1 Ok 2 [Replica 1 "cos"]
     parseJSON _ = Control.Applicative.empty
 -------------------------------------------------------------------------------------------
 --
