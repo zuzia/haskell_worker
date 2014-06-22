@@ -6,18 +6,14 @@ module Protocol
 import System.IO
 import System.Posix.Process
 import Data.Aeson
-import Data.Vector
+import qualified Data.Vector as V
 import Data.Maybe
 import Control.Applicative ((<$>), (<*>), empty)
 import Control.Monad (liftM)
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Text as DT
 
---module written according to worker protocol section in documentation
-
---TODO pipeline + map shuffle
 -- messages from the Worker to Disco
--- WORKER message, announce the startup of the worker.
 version :: String
 get_version = "1.1"
 
@@ -83,7 +79,6 @@ instance FromJSON Task where
 -- INPUT message, Worker sends it without payload
 -- or exclude, include
 -- Request input for the task from Disco.
--- TODO what about flags: "more", "done"?
 
 data Replica = Replica {
     replica_id :: Int,
@@ -92,21 +87,12 @@ data Replica = Replica {
 --TODO DISCO RETRY MSG ------------------------------------------------------------------
 instance FromJSON Replica where
     parseJSON (Array v) = do
-        let rid:rloc:_ = Data.Vector.toList v --NEIN
+        let rid:rloc:_ = V.toList v --NEIN
         let Success rep_id = fromJSON rid :: Result Int --TODO write it nicely
         let Success rep_loc = fromJSON rloc :: Result String
         return $ Replica rep_id rep_loc
     parseJSON _ = Control.Applicative.empty --TODO
 -----------------------------------------------------------------------------------------
-
---TODO maybe use it in replica location
---data Scheme 
---  = Dir
---  | Disco
---  | File
---  | Raw
---  | Http
---  | Other String
 
 data Input_flag = More | Done deriving (Show, Eq) --kept in M_task_input
 data Input_status = Ok | Busy | Failed deriving (Show, Eq)
@@ -146,34 +132,23 @@ data Input = Input {
 --TODO ----------------------------------------------------------------------------------
 instance FromJSON Input where
     parseJSON (Array v) = do
-        let iid:stat:lab:rep:_ = Data.Vector.toList v
+        let iid:stat:lab:rep:_ = V.toList v
         let Success in_id = fromJSON iid :: Result Int
         let Success in_stat = fromJSON stat :: Result Input_status
         let Success in_lab = fromJSON lab :: Result Int
         let Success in_rep = fromJSON rep :: Result [Replica]
         return $ Input in_id in_stat in_lab in_rep
     parseJSON _ = Control.Applicative.empty
--------------------------------------------------------------------------------------------
---
---TODO ----------------------------------------------------------------------------------
---instance FromJSON Input where
---    parseJSON (Object v) =
---        Input <$>
---        (v .: "input_id") <*>
---        liftM parse_input_status (v .: "status") <*>
---        (v .: "replicas")--TODO nested type
---    parseJSON _ = empty
------------------------------------------------------------------------------------------
 
 data Task_input = Task_input {
     input_flag :: Input_flag,
     inputs :: [Input]
 } deriving (Show, Eq)
---it works, again dirty, quick
+
 instance FromJSON Task_input where
     parseJSON (Array v) = do
-        let t_flag = Data.Vector.head v
-        let [ins] = (Data.Vector.toList . Data.Vector.tail) v --TODO bad idea
+        let t_flag = V.head v
+        let [ins] = (V.toList . V.tail) v --TODO bad idea
         let Success flag = fromJSON t_flag :: Result Input_flag
         let Success inp = fromJSON ins :: Result [Input]
         return $ Task_input flag inp
@@ -226,7 +201,6 @@ data Master_msg
     = M_ok
     | M_die
     | M_task Task
---    | M_task_input Input_flag Input
     | M_task_input Task_input
     | M_retry [Replica]
     | M_fail
@@ -244,7 +218,6 @@ prep_init_worker :: IO BL.ByteString
 prep_init_worker = getProcessID >>= json_w_info
     where json_w_info pid = return $ encode Worker_info{version = get_version, pid = fromIntegral pid}
 
---TODO
 prep_input_msg :: Worker_input_msg -> BL.ByteString
 prep_input_msg wim =
     case wim of
@@ -258,7 +231,6 @@ prep_input_err (Input_err ie_id xs) = encode (ie_id, xs)
 prep_output :: Output -> BL.ByteString 
 prep_output (Output label location o_size) = encode (label, location, o_size)
 
--- TODO write it with error handling
 prepare_msg :: Worker_msg -> (String, BL.ByteString)
 prepare_msg wm =
     case wm of
@@ -274,7 +246,6 @@ prepare_msg wm =
 --        otherwise -> ("ERROR", encode $ String "Pattern matching fail, prepare_msg") --TODO
 
 --separated because of impure getProcessPID in prepare init worker
---TODO think about other nicer solutions
 send_worker :: IO ()
 send_worker = prep_init_worker >>= send1
     where send1 json_msg = hPutStrLn stderr $ unwords ["WORKER", show (BL.length json_msg), BL.unpack json_msg]
@@ -284,15 +255,13 @@ send wm = do
     let (tag, json_msg) = prepare_msg wm
     hPutStrLn stderr $ unwords [tag, show (BL.length json_msg), BL.unpack json_msg]
 
--- TODO not gave much thougth to it, this function  will change
--- TODO buffering
 recive :: IO (Maybe Master_msg)
 recive = do
 --    hSetBuffering stdin LineBuffering
     in_msg  <- getLine
     let [msg, payload_len, payload] = words in_msg
     return $ process_master_msg msg payload
---TODO
+
 -- synchronized message exchange
 exchange_msg :: Worker_msg -> IO (Maybe Master_msg)
 exchange_msg wm = do
@@ -308,8 +277,8 @@ process_master_msg msg payload =
         "DIE" -> Just M_die
         "TASK" -> fmap M_task $ (decode . BL.pack) payload
         "FAIL" -> Just M_fail
-        "RETRY" -> fmap M_retry (((decode . BL.pack) payload) :: Maybe [Replica]) --TODO brackets
-        "WAIT" -> Just $ M_wait $ read payload --TODO errors
-        "INPUT" -> fmap M_task_input ((decode . BL.pack) payload :: Maybe Task_input)-- TODO brackets
+        "RETRY" -> fmap M_retry (((decode . BL.pack) payload) :: Maybe [Replica])
+        "WAIT" -> Just $ M_wait $ read payload
+        "INPUT" -> fmap M_task_input ((decode . BL.pack) payload :: Maybe Task_input)
         _ -> Nothing
 

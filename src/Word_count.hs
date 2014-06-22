@@ -7,9 +7,8 @@ import Data.List
 import System.IO
 import Data.Function
 
--- TODO - make an interface to implement
+--TODO split map/reduce output into lines
 -- basic interface, types of map and reduce
--- TODO types
 kvcompare :: (Key, Value) -> (Key, Value) -> Bool
 kvcompare (k1,_) (k2, _) = k1==k2
 
@@ -20,23 +19,21 @@ my_map :: Map
 my_map line =
     [(x,1) | x <- words line]
 
---TODO
 map_reader :: Process
-map_reader fileContents out_handle = do 
---    fileContents <- hGetContents in_handle
-    let calc_out = concatMap my_map (lines fileContents)
-    hPrint out_handle calc_out
+map_reader list_inputs out_handle = do 
+    let calc_out = concatMap (\inpt -> concatMap my_map (lines inpt)) list_inputs
+    hPrint out_handle calc_out --TODO write lines not haskell list
 
---TODO
 reduce_reader :: Process
-reduce_reader fileContents out_handle = do 
-    let calc_out = my_reduce (read fileContents :: [(Key, Value)])
+reduce_reader list_inputs out_handle = do 
+    let calc_out = concatMap (\inpt -> my_reduce (read inpt :: [(Key, Value)])) list_inputs
     hPrint out_handle calc_out
 
 
 my_reduce :: Reduce
 my_reduce iter =
     map (helper_func 0) (kvgroup iter)
+
 -- it is fold for summing (key,value) lists with the same key in tuple
 helper_func :: Int -> [(Key, Value)] -> (Key, Value)
 helper_func acc [(x,y)] = (x,acc+y)
