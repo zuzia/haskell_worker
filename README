@@ -1,9 +1,0 @@
-Haskell worker, short instruction, later I will make cabal script for that.
-Word_count compilation:
-$ ghc --make Word_count.hs -o word_count
-
-For sending package to disco -  I use jobpack written in Golang:
-
-$ go get github.com/discoproject/goworker/jobpack
-$ $GOPATH/bin/jobpack -W count_words -I http://discoproject.org/media/text/chekhov.txt
-
