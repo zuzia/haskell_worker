@@ -11,3 +11,5 @@ Then you can use the jobpack utility to send the compiled binary to a disco mast
 $ go get github.com/discoproject/goworker/jobpack
 $ $GOPATH/bin/jobpack -W word_count -I http://discoproject.org/media/text/chekhov.txt
 ```
+Build-depends:      base, text, bytestring, HTTP, vector, unix, aeson, directory
+
