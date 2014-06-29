@@ -7,8 +7,8 @@ import Data.Maybe (fromJust)
 import Control.Monad
 import qualified Data.List as DL
 import qualified Data.ByteString.Lazy.Char8 as BL
+import System.IO (withFile, IOMode(ReadMode), hGetContents)
 -- TODO import qualified System.IO.Streams as Streams
--- TODO with file
 -- module for reading file inputs from disco, different schemes
 
 {--The replica_location is specified as a URL. The protocol scheme used for the replica_location could be one of http, disco, dir or raw. A URL with the disco scheme is to be accessed using HTTP at the disco_port specified in the TASK response from Disco. The raw scheme denotes that the URL itself (minus the scheme) is the data for the task. The data needs to be properly URL encoded, for instance using Base64 encoding. The dir is like the disco scheme, except that the file pointed to contains lines of the form
@@ -61,13 +61,13 @@ disco_reader addr task = do
         "disco" -> do readFile $ absolute_disco_path addr task
         "ddfs" -> do fmap BL.unpack $ BL.readFile $ absolute_ddfs_path addr task --had problems with encoding
 
---TODO dir_reader String -> Task -> IO [String]
---dir_reader addr task = 
---  let path = (disco_data task) ++ "/" ++ addr --TODO? path = absolute_disco_path addr task
---  dir_lines <- fmap lines $ withFile path ReadMode hGetContents
---  mapM (\[_, file, _] -> address_reader file task) dir_lines -- TODO is it possible that files are from different locations?
---
---words of lines, and map
+dir_reader :: String -> Task -> IO [String]
+dir_reader addr task = do
+    let path = (disco_data task) ++ "/" ++ addr --TODO? path = absolute_disco_path addr task
+    dir_lines <- fmap lines $ withFile path ReadMode hGetContents
+    let word_lines = map words dir_lines
+    mapM (\[_, file, _] -> address_reader file task) word_lines
+
 -- form of replica_location: "dir://localhost/disco/localhost/9f/gojob@57a:3a6d2:872f0/.disco/map-0-1402239314715965.results"
 
 -- absolute paths, if data is stored locally
@@ -88,13 +88,19 @@ absolute_dir_path :: String -> Task -> String
 absolute_dir_path addr task =
     (disco_data task) ++ addr
 
--- TODO iterate over the list of inputs
 read_inputs :: Task -> [String] -> IO [String]
-read_inputs task inpt_list = mapM (\inpt -> address_reader inpt task) inpt_list
---    liftM concat $ mapM (\inpt -> address_reader inpt task) inpt_list -- concat because dir returns IO [String]
+read_inputs task inpt_list = --mapM (\inpt -> address_reader inpt task) inpt_list
+    liftM concat $ mapM (\inpt -> read_dir_rest inpt task) inpt_list -- concat because dir returns IO [String]
+
+read_dir_rest :: String -> Task -> IO [String]
+read_dir_rest address task =
+    let (scheme, addr) = get_scheme address task
+        (new_scheme, conv_addr) = convert_uri scheme addr task in
+    case new_scheme of
+        SDir -> do dir_reader conv_addr task 
+        _ -> do liftM (:[]) $ address_reader address task
 
 -- TODO abstract task
--- TODO String -> Task -> IO [String]
 address_reader :: String -> Task -> IO String
 address_reader address task = do
     let (scheme, addr) = get_scheme address task --addr is "http://..." or path to file (not absolute)
@@ -102,8 +108,7 @@ address_reader address task = do
     case new_scheme of
         SHttp -> do http_reader conv_addr
         SDisco -> do disco_reader conv_addr task
---        SDir -> do dir_reader conv_addr
-        SRaw -> return addr --TODO Base64
+        SRaw -> return conv_addr --TODO Base64
 
 disco_output_path :: String -> Task -> String
 disco_output_path tempPath task =

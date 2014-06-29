@@ -43,7 +43,8 @@ data Task = Task {
     put_port :: Int, -- DDFS_PUT_PORT
     ddfs_data :: String, -- DDFS_DATA
     disco_data :: String, -- DISCO_DATA
-    stage :: Task_stage, --map, reduce, map_shuffle
+--    stage :: Task_stage, --map, reduce, map_shuffle
+    stage :: String,
     grouping :: String, -- The grouping specified in the pipeline for the above stage.
     group :: (Int,String), -- The group this task will get its inputs from, as computed by the grouping. TODO type
     jobfile :: String, -- path to the job pack file
@@ -67,7 +68,8 @@ instance FromJSON Task where
         (v .: "put_port") <*>
         (v .: "ddfs_data") <*>
         (v .: "disco_data") <*>
-        liftM parse_task_stage (v .: "stage") <*>
+--        liftM parse_task_stage (v .: "stage") <*>
+        (v .: "stage") <*>
         (v .: "grouping") <*>
         (v .: "group") <*>
         (v .: "jobfile") <*>
