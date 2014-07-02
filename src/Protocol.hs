@@ -14,7 +14,7 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Text as DT
 
 -- messages from the Worker to Disco
-version :: String
+get_version :: String
 get_version = "1.1"
 
 timeout = 600 -- in seconds
