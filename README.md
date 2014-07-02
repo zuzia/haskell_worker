@@ -14,3 +14,6 @@ Then you can use the jobpack utility to send the compiled binary to a disco mast
 $ go get github.com/discoproject/goworker/jobpack
 $ $GOPATH/bin/jobpack -W word_count -I http://discoproject.org/media/text/chekhov.txt
 ```
+
+Build Status: [Travis-CI](http://travis-ci.org/zuzia/haskell_worker) ::
+![Travis-CI](https://secure.travis-ci.org/zuzia/haskell_worker.png)
