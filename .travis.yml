@@ -1,0 +1,7 @@
+language: haskell
+ghc: 7.6
+install:
+  - cabal install Aeson
+  - cabal install http
+script:
+  - cd src && ghc --make Word_count.hs -o word_count
