@@ -58,7 +58,7 @@ parse_task_stage ts =
         "map" -> Map
         "reduce" -> Reduce
         "map_shuffle" -> Map_shuffle
---TODO ----------------------------------------------------------------------------------
+
 instance FromJSON Task where
     parseJSON (Object v) =
         Task <$>
@@ -76,7 +76,6 @@ instance FromJSON Task where
         (v .: "jobname") <*>
         (v .: "host")
     parseJSON _ = Control.Applicative.empty
------------------------------------------------------------------------------------------
 
 -- INPUT message, Worker sends it without payload
 -- or exclude, include

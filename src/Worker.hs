@@ -8,19 +8,11 @@ import System.Directory
 import System.IO
 import Control.Exception (handle, fromException, IOException)
 import Control.Monad (liftM)
-
-type Map = String -> [(Key, Value)]
-type Reduce = [(Key, Value)] -> [(Key, Value)]
-type Key = String
-type Value = Int
+import Task
 
 --TODO shuffling -> python classic worker, functions:
 --shuffle
 --shuffle group node
---
---map, reduce reader gathered type
---TODO rewrite it to StringIO
-type Process = [String] -> Handle -> IO ()
 
 -----------------------------------------------------------------
 inpt_compare :: Input -> Input -> Bool
