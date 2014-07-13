@@ -7,7 +7,9 @@ import Data.List
 import System.Directory
 import System.IO
 import Control.Exception (handle, fromException, IOException)
-import Control.Monad (liftM)
+import Control.Monad
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Maybe
 import Task
 
 --TODO shuffling -> python classic worker, functions:
@@ -48,7 +50,7 @@ run_process_function process_fun pwd file_templ inpt_list task = do
 run_stage :: FilePath -> String -> Task -> [Input] -> Process -> IO [Maybe Output]
 run_stage pwd file_templ task inpts process_fun = do  
     let locs = get_locations inpts
-    exchange_msg $ W_msg ("locs" ++ show(length locs))
+--    exchange_msg $ W_msg ("locs" ++ show(length locs))
     read_inpts <- read_inputs task locs
     run_process_function process_fun pwd file_templ read_inpts task
 
@@ -60,16 +62,17 @@ shuffle_out inpts =
         loc = \xs -> replica_location (head xs) --TODO just first replica location
 
 --iterate over the list of outputs
-send_outputs :: (Maybe Output) -> IO (Maybe Master_msg)
+send_outputs :: (Maybe Output) -> MaybeT IO Master_msg
 send_outputs output = do
     case output of 
         Just out -> do exchange_msg $ W_output out
-        Nothing -> do return Nothing --TODO
+        Nothing -> mzero --TODO
 
 --polling for inputs, until done flag
-get_inputs :: [Int] -> IO [Input]
+--get_inputs :: [Int] -> IO [Input]
+get_inputs :: [Int] -> MaybeT IO [Input]
 get_inputs exclude = do
-    Just (M_task_input t_input) <- exchange_msg $ W_input $ Exclude exclude
+    M_task_input t_input <- exchange_msg $ W_input $ Exclude exclude
     let inpts = inputs t_input
     let excl = exclude ++ (inpt_ids t_input)
     case (input_flag t_input) of
@@ -80,22 +83,33 @@ inpt_ids :: Task_input -> [Int]
 inpt_ids t_inpt =
     map input_id (inputs t_inpt)
 
+get_stage_tmp :: Task -> Process -> Process -> (String, Process)
+get_stage_tmp task map_fun reduce_fun =
+    case stage task of
+        "map" -> ("map_out_", map_fun)
+        "reduce" -> ("reduce_out_", reduce_fun)
+
 --TODO error handling!
-run :: Process -> Process -> IO ()
+--run :: Process -> Process -> IO ()
+run :: Process -> Process -> MaybeT IO ()
 run map_fun reduce_fun = do
-    send_worker
-    Just M_ok <- recive
-    Just (M_task task) <- exchange_msg W_task
-    pwd <- getCurrentDirectory
-    let (file_templ, process_fun) = case stage task of
-            "map" -> ("map_out_", map_fun)
-            "reduce" -> ("reduce_out_", reduce_fun)
-    Just (M_task_input t_input) <- exchange_msg $ W_input Empty
+    pwd <- lift getCurrentDirectory
+    lift send_worker
+    recive --TODO M_ok in recive
+    M_task task <- exchange_msg W_task
+    let (file_templ, process_fun) = get_stage_tmp task map_fun reduce_fun
+    M_task_input t_input <- exchange_msg $ W_input Empty
     inputs_list <-  get_inputs []
     outputs <- case stage task of
-        "map_shuffle" -> shuffle_out inputs_list
-        _ -> do run_stage pwd file_templ task inputs_list process_fun
-    mapM send_outputs outputs
-    Just M_ok <- exchange_msg W_done
-    return ()
+        "map_shuffle" -> lift $ shuffle_out inputs_list
+        _ -> do lift $ run_stage pwd file_templ task inputs_list process_fun
+    mapM send_outputs outputs >> exchange_msg W_done >> return ()
+
+--TODO errors, and maybe process
+run_worker :: Process -> Process -> IO ()
+run_worker map_fun reduce_fun = do
+    result <- runMaybeT $ run map_fun reduce_fun --TODO Nothing + wrap it
+    case result of
+        Nothing -> (runMaybeT $ exchange_msg $ W_fatal "Protocol error") >> return ()
+        Just _ -> return ()
 

@@ -9,7 +9,9 @@ import Data.Aeson
 import qualified Data.Vector as V
 import Data.Maybe
 import Control.Applicative ((<$>), (<*>), empty)
-import Control.Monad (liftM)
+import Control.Monad
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Text as DT
 
@@ -247,28 +249,42 @@ send wm = do
     let (tag, json_msg) = prepare_msg wm
     hPutStrLn stderr $ unwords [tag, show (BL.length json_msg), BL.unpack json_msg]
 
-recive :: IO (Maybe Master_msg)
+--TODO wait until timeout!
+recive :: MaybeT IO Master_msg
+--recive :: IO (Maybe Master_msg)
 recive = do
-    in_msg  <- getLine
+    in_msg  <- lift getLine
     let [msg, payload_len, payload] = words in_msg
-    return $ process_master_msg msg payload
+    --return $ process_master_msg msg payload --lift?
+    process_master_msg msg payload
 
 -- synchronized message exchange
-exchange_msg :: Worker_msg -> IO (Maybe Master_msg)
+exchange_msg :: Worker_msg -> MaybeT IO Master_msg
+--exchange_msg :: Worker_msg -> IO (Maybe Master_msg)
 exchange_msg wm = do
-    send wm
-    hFlush stderr
+    lift $ send wm
+    lift $ hFlush stderr
     recive
 
-process_master_msg :: String -> String -> Maybe Master_msg
+process_master_msg :: MonadPlus m => String -> String -> m Master_msg
+--process_master_msg :: String -> String -> Maybe Master_msg
 process_master_msg msg payload = 
     case msg of
-        "OK" -> Just M_ok
-        "DIE" -> Just M_die
-        "TASK" -> fmap M_task $ (decode . BL.pack) payload
-        "FAIL" -> Just M_fail
-        "RETRY" -> fmap M_retry (((decode . BL.pack) payload) :: Maybe [Replica])
-        "WAIT" -> Just $ M_wait $ read payload
-        "INPUT" -> fmap M_task_input ((decode . BL.pack) payload :: Maybe Task_input)
-        _ -> Nothing
+        "OK" -> return M_ok
+        "DIE" -> return M_die
+        --"TASK" -> fmap M_task $ (decode . BL.pack) payload --TODO
+        "TASK" -> case ((decode . BL.pack) payload :: Maybe Task) of
+                    Nothing -> mzero
+                    Just t -> return $ M_task t
+        "FAIL" -> return M_fail
+        --"RETRY" -> fmap M_retry (((decode . BL.pack) payload) :: Maybe [Replica]) --TODO
+        "RETRY" -> case (((decode . BL.pack) payload) :: Maybe [Replica]) of
+                    Nothing -> mzero
+                    Just r -> return $ M_retry r
+        "WAIT" -> return $ M_wait $ read payload
+        --"INPUT" -> fmap M_task_input ((decode . BL.pack) payload :: Maybe Task_input) --TODO
+        "INPUT" -> case ((decode . BL.pack) payload :: Maybe Task_input) of
+                    Nothing -> mzero
+                    Just ti -> return $ M_task_input ti
+        otherwise -> mzero
 

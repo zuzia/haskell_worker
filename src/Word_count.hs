@@ -28,6 +28,6 @@ my_reduce iter =
 
 main :: IO ()
 main = do
-    Worker.run map_reader reduce_reader
+    Worker.run_worker map_reader reduce_reader
     return ()
 
