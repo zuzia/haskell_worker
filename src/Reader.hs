@@ -16,14 +16,14 @@ import System.IO (withFile, IOMode(ReadMode), hGetContents)
 <label> ‘SP’ <url> ‘SP’ <output_size> ‘\n’ --}
 
 
-data Scheme = SDir | SDisco | SRaw | SHttp deriving(Show)
+data Scheme = SDir | SDisco | SRaw | SHttp deriving(Show, Eq)
 
 --takes whole replica location string, divides it in two part: scheme and actual address
 split_scheme_loc :: String -> (String, String)
 split_scheme_loc addr = (\(scheme, loc) -> (scheme, drop 3 loc)) $ break (==':') addr
 
-get_scheme :: String -> Task -> (Scheme, String)
-get_scheme addr task = 
+get_scheme :: String -> (Scheme, String)
+get_scheme addr = 
     case scheme of
         "http" -> (SHttp, addr)
         "https" -> (SHttp, addr)
@@ -41,13 +41,18 @@ get_data_type addr task = fst $ break (=='/') $ fromJust $ DL.stripPrefix ((host
 --A URL with the disco scheme is to be accessed using HTTP at the disco_port specified in the TASK response from Disco. 
 --TODO dir
 convert_uri :: Scheme -> String -> Task -> (Scheme, String)
-convert_uri SDisco addr task =
+convert_uri scheme addr task =
+    case (scheme == SDisco) || (scheme == SDir)  of
+        True -> conv_helper scheme addr task
+        False -> (scheme, addr)
+
+conv_helper :: Scheme -> String -> Task -> (Scheme, String)
+conv_helper scheme addr task =
     case ((host task) /= local_str) of
         True -> (SHttp, "http://" ++ local_str ++ ":" ++ show(disco_port task) ++ rest)
-        False -> (SDisco, addr)
+        False -> (scheme, addr)
     where
         (local_str, rest) = break (=='/') addr
-convert_uri schem addr _ = (schem, addr)
 
 -- different locations readers
 http_reader :: String -> IO String
@@ -94,7 +99,7 @@ read_inputs task inpt_list = --mapM (\inpt -> address_reader inpt task) inpt_lis
 
 read_dir_rest :: String -> Task -> IO [String]
 read_dir_rest address task =
-    let (scheme, addr) = get_scheme address task
+    let (scheme, addr) = get_scheme address
         (new_scheme, conv_addr) = convert_uri scheme addr task in
     case new_scheme of
         SDir -> do dir_reader conv_addr task 
@@ -103,7 +108,7 @@ read_dir_rest address task =
 -- TODO abstract task
 address_reader :: String -> Task -> IO String
 address_reader address task = do
-    let (scheme, addr) = get_scheme address task --addr is "http://..." or path to file (not absolute)
+    let (scheme, addr) = get_scheme address --addr is "http://..." or path to file (not absolute)
     let (new_scheme, conv_addr) = convert_uri scheme addr task
     case new_scheme of
         SHttp -> do http_reader conv_addr

@@ -90,7 +90,6 @@ get_stage_tmp task map_fun reduce_fun =
         "reduce" -> ("reduce_out_", reduce_fun)
 
 --TODO error handling!
---run :: Process -> Process -> IO ()
 run :: Process -> Process -> MaybeT IO ()
 run map_fun reduce_fun = do
     pwd <- lift getCurrentDirectory

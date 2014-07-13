@@ -251,40 +251,27 @@ send wm = do
 
 --TODO wait until timeout!
 recive :: MaybeT IO Master_msg
---recive :: IO (Maybe Master_msg)
 recive = do
     in_msg  <- lift getLine
     let [msg, payload_len, payload] = words in_msg
-    --return $ process_master_msg msg payload --lift?
     process_master_msg msg payload
 
 -- synchronized message exchange
 exchange_msg :: Worker_msg -> MaybeT IO Master_msg
---exchange_msg :: Worker_msg -> IO (Maybe Master_msg)
 exchange_msg wm = do
     lift $ send wm
     lift $ hFlush stderr
     recive
 
 process_master_msg :: MonadPlus m => String -> String -> m Master_msg
---process_master_msg :: String -> String -> Maybe Master_msg
 process_master_msg msg payload = 
     case msg of
         "OK" -> return M_ok
         "DIE" -> return M_die
-        --"TASK" -> fmap M_task $ (decode . BL.pack) payload --TODO
-        "TASK" -> case ((decode . BL.pack) payload :: Maybe Task) of
-                    Nothing -> mzero
-                    Just t -> return $ M_task t
+        "TASK" -> maybe mzero (return . M_task) ((decode . BL.pack) payload :: Maybe Task)
         "FAIL" -> return M_fail
-        --"RETRY" -> fmap M_retry (((decode . BL.pack) payload) :: Maybe [Replica]) --TODO
-        "RETRY" -> case (((decode . BL.pack) payload) :: Maybe [Replica]) of
-                    Nothing -> mzero
-                    Just r -> return $ M_retry r
+        "RETRY" -> maybe mzero (return . M_retry) ((decode . BL.pack) payload :: Maybe [Replica])
         "WAIT" -> return $ M_wait $ read payload
-        --"INPUT" -> fmap M_task_input ((decode . BL.pack) payload :: Maybe Task_input) --TODO
-        "INPUT" -> case ((decode . BL.pack) payload :: Maybe Task_input) of
-                    Nothing -> mzero
-                    Just ti -> return $ M_task_input ti
+        "INPUT" -> maybe mzero (return . M_task_input) ((decode . BL.pack) payload :: Maybe Task_input)
         otherwise -> mzero
 
