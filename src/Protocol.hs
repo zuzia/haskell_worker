@@ -5,6 +5,7 @@ module Protocol
 
 import System.IO
 import System.Posix.Process
+import System.Timeout
 import Data.Aeson
 import qualified Data.Vector as V
 import Data.Maybe
@@ -19,7 +20,8 @@ import qualified Data.Text as DT
 get_version :: String
 get_version = "1.1"
 
-timeout = 600 -- in seconds
+get_timeout :: Int
+get_timeout = 600 * 10^6 -- in microseconds (because of System.Timeout library)
 
 data Worker_info = Worker_info {
     version :: String,
@@ -117,7 +119,7 @@ instance FromJSON Input_status where
 data Input = Input {
     input_id :: Int,
     status :: Input_status, -- ok, busy, failed
-    input_label :: Int,
+    input_label :: Int, --TODO what with "all" label? (found in ODisco)
     replicas :: [Replica]
 } deriving (Show, Eq)
 
@@ -249,10 +251,16 @@ send wm = do
     let (tag, json_msg) = prepare_msg wm
     hPutStrLn stderr $ unwords [tag, show (BL.length json_msg), BL.unpack json_msg]
 
---TODO wait until timeout!
+handle_timeout :: MaybeT IO String
+handle_timeout = do
+    in_msg <- lift (timeout get_timeout getLine) -- :: IO (Maybe String) want MaybeT IO
+    case in_msg of
+        Nothing -> mzero
+        Just s -> return s
+
 recive :: MaybeT IO Master_msg
 recive = do
-    in_msg  <- lift getLine
+    in_msg <- handle_timeout --it propagates Nothing, thanks to laziness
     let [msg, payload_len, payload] = words in_msg
     process_master_msg msg payload
 
