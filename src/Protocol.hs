@@ -31,8 +31,6 @@ data Worker_info = Worker_info {
 instance ToJSON Worker_info where
      toJSON (Worker_info version pid) = object ["version" .= version, "pid" .= pid]
 
--- TASK message, Worker sends it without payload
--- request the task information from disco
 data Task = Task {
     taskid :: Int,
     master :: String,
@@ -64,10 +62,6 @@ instance FromJSON Task where
         (v .: "jobname") <*>
         (v .: "host")
     parseJSON _ = empty
-
--- INPUT message, Worker sends it without payload
--- or with exclude, include
--- Request input for the task from Disco.
 
 data Replica = Replica {
     replica_id :: Int,
@@ -116,10 +110,23 @@ instance FromJSON Input_status where
             Nothing -> empty
     parseJSON _ = empty
 
+instance FromJSON Input_label where
+    parseJSON (String ilabel) =
+        case ilabel of
+            "all" -> return All
+            _ -> empty
+    parseJSON ilabel = Label <$> parseJSON ilabel --TODO pattern ?
+
+instance ToJSON Input_label where
+    toJSON All = String "all"
+    toJSON (Label x) = toJSON x
+
+data Input_label = All | Label Int deriving (Show, Eq)
+
 data Input = Input {
     input_id :: Int,
     status :: Input_status, -- ok, busy, failed
-    input_label :: Int, --TODO what with "all" label? (found in ODisco)
+    input_label :: Input_label,
     replicas :: [Replica]
 } deriving (Show, Eq)
 
@@ -170,7 +177,8 @@ instance ToJSON Output_type where
 
 --[output_location, output_type, label]
 data Output = Output {
-    output_label :: Int, --TODO check type
+    --output_label :: Int,
+    output_label :: Input_label, --TODO
     output_location :: String,
     output_size :: Integer
 --    output_type :: Output_type
@@ -253,7 +261,7 @@ send wm = do
 
 handle_timeout :: MaybeT IO String
 handle_timeout = do
-    in_msg <- lift (timeout get_timeout getLine) -- :: IO (Maybe String) want MaybeT IO
+    in_msg <- lift (timeout get_timeout getLine)
     case in_msg of
         Nothing -> mzero
         Just s -> return s

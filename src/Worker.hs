@@ -45,7 +45,7 @@ run_process_function process_fun pwd file_templ inpt_list task = do
     let out_path = disco_output_path tempFilePath task
     out_size <- hFileSize tempHandle
     hClose tempHandle
-    return $ [Just (Output 0 out_path out_size)] --TODO labels?
+    return $ [Just (Output (Label 0) out_path out_size)] --TODO labels?
 
 run_stage :: FilePath -> String -> Task -> [Input] -> Process -> IO [Maybe Output]
 run_stage pwd file_templ task inpts process_fun = do  
