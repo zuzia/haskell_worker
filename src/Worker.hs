@@ -89,12 +89,18 @@ get_stage_tmp task map_fun reduce_fun =
         "map" -> ("map_out_", map_fun)
         "reduce" -> ("reduce_out_", reduce_fun)
 
+expect_ok :: MaybeT IO Master_msg
+expect_ok =
+    recive >>= (\msg -> case msg of
+                            M_ok -> return M_ok
+                            _ -> mzero)
+
 --TODO error handling!
 run :: Process -> Process -> MaybeT IO ()
 run map_fun reduce_fun = do
     pwd <- lift getCurrentDirectory
     lift send_worker
-    recive --TODO M_ok in recive
+    expect_ok
     M_task task <- exchange_msg W_task
     let (file_templ, process_fun) = get_stage_tmp task map_fun reduce_fun
     M_task_input t_input <- exchange_msg $ W_input Empty
