@@ -37,7 +37,6 @@ group_inputs inpts_list task=
 --Started multiple replica location handling
 --
 --TODO it would be nice not to block
---jak przeczytam to nie pytam, ale jak nie przeczytam i status jest busy to wtedy pytam
 --input_status :: Input -> MaybeT IO Input
 --input_status inpt =
 --    case status inpt of
