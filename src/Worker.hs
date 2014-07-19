@@ -11,6 +11,7 @@ import Control.Monad
 import Control.Monad.Trans (lift)
 import Control.Monad.Trans.Maybe
 import Task
+import Control.Concurrent (threadDelay)
 
 --TODO shuffling -> python classic worker, functions:
 --shuffle
@@ -32,7 +33,67 @@ group_inputs inpts_list task=
         "group_node" -> [inpts_list] --TODO
         "group_node_label" -> [inpts_list] --TODO
 
------------------------------------------------------------------
+----------------------------------------------------------------
+--Started multiple replica location handling
+--
+--TODO it would be nice not to block
+--jak przeczytam to nie pytam, ale jak nie przeczytam i status jest busy to wtedy pytam
+--input_status :: Input -> MaybeT IO Input
+--input_status inpt =
+--    case status inpt of
+--        Ok -> return inpt
+--        Busy -> poll_input inpt
+--        Failed -> return inpt --TODO just ignore it?
+--
+--poll_input :: Input -> MaybeT IO Input
+--poll_input inpt = do
+--    M_task_input t_input <- exchange_msg $ W_input $ Include [input_id inpt] -- TODO more, done
+--    return $ (head . inputs) t_input --[Input] ?? I ask for just one input_id, but can for a list
+--
+----tries to read replicas in order
+--read_replicas :: Task -> [Replica] -> [Replica] -> IO (Either [Replica] [String])
+--read_replicas _ [] broken = return $ Left broken
+--read_replicas task (r:rs) broken = do
+--    read_repl <- read_dir_rest (replica_location r) task
+--    case read_repl of
+--        Just s -> return $ Right s
+--        Nothing -> read_replicas task rs (r:broken)
+--
+---- TODO after this function returns Nothing -> send Error msg to disco!
+--handle_mult_repl :: Task -> Input -> IO (Maybe [String])
+--handle_mult_repl task inpt = do
+--    let repl_list = replicas inpt
+--    read_repl <- read_replicas task repl_list []
+--    case read_repl of
+--        Right s -> return $ Just s
+--        --Left broken -> input_err inpt broken --TODO what with Nothing?
+--        Left broken -> handle_again task inpt broken --TODO what with Nothing?
+--
+----TODO change that silly function, abstract replica processing?
+--handle_again :: Task -> Input -> [Replica] -> IO (Maybe [String])
+--handle_again task inpt broken = do
+--    new_in <- input_err inpt broken
+--    case new_in of
+--        Nothing -> return Nothing
+--        Just new_inpt -> do 
+--            let repl_list = replicas new_inpt
+--            read_repl <- read_replicas task repl_list []
+--            case read_repl of
+--                Right s -> return $ Just s
+--                Left broken -> return Nothing
+--            
+--
+--input_err :: Input -> [Replica] -> IO (Maybe Input)
+--input_err inpt broken = do
+--    let r_ids = map replica_id broken 
+--    msg <- runMaybeT $ exchange_msg $ W_input_err $ Input_err (input_id inpt) r_ids
+--    case msg of
+--        Just (M_retry new_replicas) -> return $ Just inpt {replicas = new_replicas}
+--        Just (M_wait how_long) -> (threadDelay $ how_long * 10^6) >> (runMaybeT $ poll_input inpt) --TODO what if wait repeats?
+--        Just (M_fail) -> return Nothing
+--        otherwise -> return Nothing
+
+----------------------------------------------------------------
 
 get_locations :: [Input] -> [String]
 get_locations inpts =
@@ -50,8 +111,7 @@ run_process_function process_fun pwd file_templ inpt_list task = do
 run_stage :: FilePath -> String -> Task -> [Input] -> Process -> IO [Maybe Output]
 run_stage pwd file_templ task inpts process_fun = do  
     let locs = get_locations inpts
---    exchange_msg $ W_msg ("locs" ++ show(length locs))
-    read_inpts <- read_inputs task locs
+    Just read_inpts <- runMaybeT $ read_inputs task locs --TODO glued just for now, it will change
     run_process_function process_fun pwd file_templ read_inpts task
 
 --TODO change it

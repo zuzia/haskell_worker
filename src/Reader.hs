@@ -5,16 +5,15 @@ import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
 import Protocol
 import Data.Maybe (fromJust)
 import Control.Monad
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Maybe
 import qualified Data.List as DL
 import qualified Data.ByteString.Lazy.Char8 as BL
 import System.IO (withFile, IOMode(ReadMode), hGetContents)
 -- TODO import qualified System.IO.Streams as Streams
 -- module for reading file inputs from disco, different schemes
 
-{--The replica_location is specified as a URL. The protocol scheme used for the replica_location could be one of http, disco, dir or raw. A URL with the disco scheme is to be accessed using HTTP at the disco_port specified in the TASK response from Disco. The raw scheme denotes that the URL itself (minus the scheme) is the data for the task. The data needs to be properly URL encoded, for instance using Base64 encoding. The dir is like the disco scheme, except that the file pointed to contains lines of the form
-
-<label> ‘SP’ <url> ‘SP’ <output_size> ‘\n’ --}
-
+--TODO instead of MaybeT IO -> ErrorT?
 
 data Scheme = SDir | SDisco | SRaw | SHttp deriving(Show, Eq)
 
@@ -22,29 +21,29 @@ data Scheme = SDir | SDisco | SRaw | SHttp deriving(Show, Eq)
 split_scheme_loc :: String -> (String, String)
 split_scheme_loc addr = (\(scheme, loc) -> (scheme, drop 3 loc)) $ break (==':') addr
 
-get_scheme :: String -> (Scheme, String)
+get_scheme :: String -> Maybe (Scheme, String)
 get_scheme addr = 
     case scheme of
-        "http" -> (SHttp, addr)
-        "https" -> (SHttp, addr)
-        "disco" -> (SDisco, location)
-        "dir" -> (SDir, location)
-        "raw" -> (SRaw, location)
+        "http" -> Just (SHttp, addr)
+        "https" -> Just (SHttp, addr)
+        "disco" -> Just (SDisco, location)
+        "dir" -> Just (SDir, location)
+        "raw" -> Just (SRaw, location)
+        otherwise -> Nothing
     where
         (scheme, location) = split_scheme_loc addr
 
 -- gets the disco or ddfs part from the address (if it is to be accessed locally)
 get_data_type :: String -> Task -> String
-get_data_type addr task = fst $ break (=='/') $ fromJust $ DL.stripPrefix ((host task) ++ "/")  addr
+get_data_type addr task = maybe "" (fst . break (=='/')) (DL.stripPrefix ((host task) ++ "/")  addr)
 
 -- /usr/local/var/disco/data/localhost ++ sth
 --A URL with the disco scheme is to be accessed using HTTP at the disco_port specified in the TASK response from Disco. 
---TODO dir
 convert_uri :: Scheme -> String -> Task -> (Scheme, String)
 convert_uri scheme addr task =
-    case (scheme == SDisco) || (scheme == SDir)  of
-        True -> conv_helper scheme addr task
-        False -> (scheme, addr)
+    case scheme of
+        SDisco -> conv_helper scheme addr task
+        otherwise -> (scheme, addr)
 
 conv_helper :: Scheme -> String -> Task -> (Scheme, String)
 conv_helper scheme addr task =
@@ -60,58 +59,58 @@ http_reader address = do
     simpleHTTP (getRequest address) >>= getResponseBody
 
 -- hSetEncoding utf8? like in python force_utf8
-disco_reader :: String -> Task -> IO String
+disco_reader :: String -> Task -> MaybeT IO String
 disco_reader addr task = do
+    let err_fun = error "Unknown address - disco reader"
     case (get_data_type addr task) of
-        "disco" -> do readFile $ absolute_disco_path addr task
-        "ddfs" -> do fmap BL.unpack $ BL.readFile $ absolute_ddfs_path addr task --had problems with encoding
+        "disco" -> do maybe mzero (lift . readFile) (absolute_disco_path addr task)
+        "ddfs" -> do maybe mzero ((fmap BL.unpack) . lift . BL.readFile) (absolute_ddfs_path addr task)
+        otherwise -> mzero
 
-dir_reader :: String -> Task -> IO [String]
+--obtain dir entries no matter if local or remote
+get_dir_lines :: String -> Task -> MaybeT IO String
+get_dir_lines addr task = do
+    let (new_scheme, conv_addr) = convert_uri SDisco addr task
+    case new_scheme of
+        SHttp -> lift $  http_reader conv_addr
+        otherwise -> disco_reader conv_addr task
+
+dir_reader :: String -> Task -> MaybeT IO [String]
 dir_reader addr task = do
-    let path = (disco_data task) ++ "/" ++ addr --TODO? path = absolute_disco_path addr task
-    dir_lines <- fmap lines $ withFile path ReadMode hGetContents
+    dir_file <- get_dir_lines addr task --TODO catch
+    let dir_lines = lines dir_file
     let word_lines = map words dir_lines
     mapM (\[_, file, _] -> address_reader file task) word_lines
 
--- form of replica_location: "dir://localhost/disco/localhost/9f/gojob@57a:3a6d2:872f0/.disco/map-0-1402239314715965.results"
-
 -- absolute paths, if data is stored locally
-absolute_disco_path :: String -> Task -> String
+absolute_disco_path :: String -> Task -> Maybe String
 absolute_disco_path addr task =
-    (disco_data task) ++ rest
-    where
-        rest = fromJust $ DL.stripPrefix ((host task) ++"/disco") addr
+    case (DL.stripPrefix ((host task) ++"/disco") addr) of
+        Just rest -> Just $ (disco_data task) ++ rest
+        Nothing -> Nothing
 
---ddfs data "disco://localhost/ddfs/vol0/blob/1d/bigfile_txt-0$57b-18eb6-f183a\"]]]]]"
-absolute_ddfs_path :: String -> Task -> String
+absolute_ddfs_path :: String -> Task -> Maybe String
 absolute_ddfs_path addr task =
-    (ddfs_data task) ++ rest
-    where
-        rest = fromJust $ DL.stripPrefix ((host task) ++"/ddfs") addr
+    case (DL.stripPrefix ((host task) ++"/ddfs") addr) of
+        Just rest -> Just $ (ddfs_data task) ++ rest
+        Nothing -> Nothing
 
-absolute_dir_path :: String -> Task -> String
-absolute_dir_path addr task =
-    (disco_data task) ++ addr
-
-read_inputs :: Task -> [String] -> IO [String]
+read_inputs :: Task -> [String] -> MaybeT IO [String]
 read_inputs task inpt_list = --mapM (\inpt -> address_reader inpt task) inpt_list
     liftM concat $ mapM (\inpt -> read_dir_rest inpt task) inpt_list -- concat because dir returns IO [String]
 
-read_dir_rest :: String -> Task -> IO [String]
-read_dir_rest address task =
-    let (scheme, addr) = get_scheme address
-        (new_scheme, conv_addr) = convert_uri scheme addr task in
+read_dir_rest :: String -> Task -> MaybeT IO [String]
+read_dir_rest address task = do
+    (new_scheme, conv_addr) <- maybe mzero (\(scheme, addr) -> return (convert_uri scheme addr task)) (get_scheme address)
     case new_scheme of
         SDir -> do dir_reader conv_addr task 
         _ -> do liftM (:[]) $ address_reader address task
 
--- TODO abstract task
-address_reader :: String -> Task -> IO String
+address_reader :: String -> Task -> MaybeT IO String
 address_reader address task = do
-    let (scheme, addr) = get_scheme address --addr is "http://..." or path to file (not absolute)
-    let (new_scheme, conv_addr) = convert_uri scheme addr task
+    (new_scheme, conv_addr) <- maybe mzero (\(scheme, addr) -> return (convert_uri scheme addr task)) (get_scheme address)
     case new_scheme of
-        SHttp -> do http_reader conv_addr
+        SHttp -> do lift $ http_reader conv_addr
         SDisco -> do disco_reader conv_addr task
         SRaw -> return conv_addr --TODO Base64
 
