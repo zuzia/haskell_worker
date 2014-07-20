@@ -110,7 +110,7 @@ run_process_function process_fun pwd file_templ inpt_list task = do
 run_stage :: FilePath -> String -> Task -> [Input] -> Process -> IO [Maybe Output]
 run_stage pwd file_templ task inpts process_fun = do  
     let locs = get_locations inpts
-    Just read_inpts <- runMaybeT $ read_inputs task locs --TODO glued just for now, it will change
+    read_inpts <- read_inputs task locs --TODO try!!!
     run_process_function process_fun pwd file_templ read_inpts task
 
 --TODO change it
