@@ -14,7 +14,7 @@ data WorkerException =
     | DdfsExcept String
     | HttpExcept String
     | AbsPathExcept
-    | MiscExcept String deriving (Typeable)
+    | MiscExcept String deriving (Typeable, Eq)
 
 instance Show WorkerException where
     show UnknownScheme = "Unknown scheme"
