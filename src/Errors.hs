@@ -14,6 +14,7 @@ data WorkerException =
     | DdfsExcept String
     | HttpExcept String
     | AbsPathExcept
+    | SortingExcept
     | MiscExcept String deriving (Typeable, Eq)
 
 instance Show WorkerException where
@@ -23,6 +24,7 @@ instance Show WorkerException where
     show (DiscoExcept str) = "Couldn't read disco data, message: " ++ str
     show (DdfsExcept str) = "Couldn't read ddfs data, message: " ++ str
     show AbsPathExcept = "Absolute path exception disco/ddfs reader" 
+    show SortingExcept = "Problem with sorting reduce input" 
     show (MiscExcept str) = str
 
 instance Exception WorkerException
