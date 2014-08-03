@@ -11,10 +11,10 @@ import System.Exit
 import System.IO
 import System.Directory
 
-kvcompare :: (Key, a) -> (Key, a) -> Bool
+kvcompare :: Ord k => (k, a) -> (k, a) -> Bool
 kvcompare (k1,_) (k2, _) = k1==k2
 
-kvgroup ::[(Key, a)] -> [[(Key, a)]]
+kvgroup ::Ord k => [(k, a)] -> [[(k, a)]]
 kvgroup l = groupBy kvcompare (sortBy (compare `on` fst) l)
 
 -- it is fold for summing (key,value) lists with the same key in tuple
