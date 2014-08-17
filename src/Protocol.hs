@@ -1,7 +1,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Protocol
-    where
+module Protocol(
+    exchange_msg, -- :: Worker_msg -> MaybeT IO Master_msg
+    send_worker, -- :: IO ()
+    recive, -- :: MaybeT IO Master_msg
+    Master_msg(..),
+    Worker_msg(..),
+    Task(..),
+    Input(..),
+    Output(..),
+    Task_input(..),
+    Replica(..),
+    Input_label(..),
+    Input_flag(..),
+    Input_status(..),
+    Worker_input_msg(..)
+) where
 
 import System.IO
 import System.Posix.Process
@@ -16,7 +30,6 @@ import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Text as DT
 
--- messages from the Worker to Disco
 get_version :: String
 get_version = "1.1"
 
@@ -125,7 +138,7 @@ data Input_label = All | Label Int deriving (Show, Eq)
 
 data Input = Input {
     input_id :: Int,
-    status :: Input_status, -- ok, busy, failed
+    status :: Input_status,
     input_label :: Input_label,
     replicas :: [Replica]
 } deriving (Show, Eq)
@@ -160,10 +173,8 @@ instance FromJSON Task_input where
             otherwise -> empty
     parseJSON _ = empty
 
---['exclude', [input_id]] or ['include', [input_id]] or ""
 data Worker_input_msg = Exclude [Int] | Include [Int] | Empty deriving (Show, Eq)
 
---[input_id, [rep_id]]
 data Input_err = Input_err {
     input_err_id :: Int,
     rep_ids :: [Int]	
@@ -175,21 +186,11 @@ instance ToJSON Output_type where
     toJSON Part = String "part"
     toJSON Tag = String "tag"
 
---[output_location, output_type, label]
 data Output = Output {
-    --output_label :: Int,
-    output_label :: Input_label, --TODO
+    output_label :: Input_label,
     output_location :: String,
     output_size :: Integer
---    output_type :: Output_type
 } deriving (Show, Eq)
-
---TODO maybe other solution
---data Worker = Worker {
---    task :: Task,
---    inputs :: [Input],
---    outputs :: [Output]
---} deriving (Show, Eq)
 
 data Worker_msg
      = W_worker
@@ -268,7 +269,7 @@ handle_timeout = do
 
 recive :: MaybeT IO Master_msg
 recive = do
-    in_msg <- handle_timeout --it propagates Nothing, thanks to laziness
+    in_msg <- handle_timeout
     let [msg, payload_len, payload] = words in_msg
     process_master_msg msg payload
 

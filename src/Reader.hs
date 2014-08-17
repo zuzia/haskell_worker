@@ -1,9 +1,13 @@
-module Reader
-    where
+module Reader(
+    read_inputs, -- :: Task -> [String] -> IO [String]
+    disco_output_path, -- :: String -> Task -> String
+    split_scheme_loc, -- :: String -> (String, String)
+    http_reader -- :: String -> IO String
+) where
 
-import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
 import Protocol
 import Errors
+import Network.HTTP (simpleHTTP, getRequest, getResponseBody) --TODO use Network.HTTP.Conduit instead
 import Data.Maybe (fromJust)
 import Control.Monad
 import Control.Monad.Trans (lift)
@@ -13,7 +17,7 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import System.IO (withFile, IOMode(ReadMode), hGetContents)
 import Control.Exception
 import Prelude hiding (catch)
--- TODO import qualified System.IO.Streams as Streams
+
 -- module for reading file inputs from disco, different schemes
 
 data Scheme = SDir | SDisco | SRaw | SHttp deriving(Show, Eq)

@@ -1,5 +1,6 @@
-module Worker
-    where
+module Worker(
+    run_worker -- :: Job k1 v1 k2 v2 v3 m p -> IO ()
+) where
 
 import Protocol
 import Reader
