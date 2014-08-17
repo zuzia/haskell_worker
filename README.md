@@ -5,7 +5,7 @@ First, install the aeson package for parsing json and http for http operations.
 Then the example can be built with:
 
 ```
-$ ghc --make Word_count.hs -o word_count
+$ ghc --make Word_count.hs -o word_count -i../src
 ```
 
 Then you can use the jobpack utility to send the compiled binary to a disco master. For example:
