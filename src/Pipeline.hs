@@ -1,3 +1,9 @@
+{-|
+Module      : Pipeline
+Description : Pipeline worker logic
+
+Not working - needs refactor after last changes in Worker module.
+-}
 module Pipeline
     where
 
@@ -6,6 +12,7 @@ import Reader
 import Task as T
 import qualified Worker as W
 import qualified Data.List as DL
+import qualified Data.Set as Set
 import System.Directory (getCurrentDirectory)
 import Control.Monad
 import Control.Monad.Trans (lift)
@@ -28,29 +35,31 @@ data Grouping
     | Group_node_label
     | Group_all
 
-data Stage = Stage {
-    process_fun :: T.Process,
+data Stage p  = Stage {
+    process_fun :: T.Process p,
+    params :: p,
     name :: String,
     grouping :: Grouping
 }
---    init ::
---    done ::
---    combine ::
---    sort ::
---    input_chain ::
---    output_chain ::
-type Pipeline = [Stage]
 
-stage_names :: Pipeline -> [String]
+type Pipeline p = [Stage p]
+
+-- | Stage names in a pipeline have to be unique. 
+--grouping should be one of split, group_label, group_all, group_node and group_node_label.
+--That function will be used only for small lists.
+check_pipeline :: Pipeline p -> Bool
+check_pipeline pipeline = (Set.size $ Set.fromList $ map name pipeline) == length pipeline
+
+stage_names :: Pipeline p -> [String]
 stage_names pipeline =
     map name pipeline
 
-get_process_fun :: Pipeline -> String -> Maybe T.Process
+get_process_fun :: Pipeline p-> String -> Maybe (T.Process p)
 get_process_fun pipeline stage_name =
     DL.lookup stage_name assoc
     where assoc = map (\p -> (name p, process_fun p)) pipeline
 
-run_task :: FilePath -> String -> Task -> [Input] -> T.Process -> MaybeT IO Master_msg
+run_task :: FilePath -> String -> Task -> [Input] -> T.Process p -> MaybeT IO Master_msg
 run_task pwd file_templ task list_inputs process_fun = do
     -- TODO call init function
     -- TODO call done function
@@ -58,8 +67,8 @@ run_task pwd file_templ task list_inputs process_fun = do
     mapM W.send_outputs outputs
     exchange_msg W_done
     
---analogous to classic run
-run :: Pipeline -> MaybeT IO ()
+-- | Analogous to classic worker run
+run :: Pipeline p -> MaybeT IO ()
 run pipeline = do
     pwd <- lift getCurrentDirectory
     lift send_worker
@@ -73,10 +82,9 @@ run pipeline = do
         Nothing -> do exchange_msg $ W_fatal "Non-existent stage"
     return ()
 
---for example pipeline = [("map", Split), ("shuffle", Group_node), ("reduce", Group_all)]
-start_pipeline :: Pipeline -> IO () 
+-- | For example pipeline = [("map", Split), ("shuffle", Group_node), ("reduce", Group_all)]
+start_pipeline :: Pipeline p -> IO () 
 start_pipeline pipeline = do
-    --handle error_wrapper (run pipeline) --TODO error wrapper
     result <- runMaybeT $ run pipeline
     case result of
         Nothing -> (runMaybeT $ exchange_msg $ W_fatal "Protocol error") >> return ()

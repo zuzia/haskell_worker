@@ -1,4 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Jobpack
+Description : Jobpack creation and submission
+
+Needs debugging and improvements.
+-}
 
 module Jobpack
     where
@@ -60,21 +66,21 @@ data Header = Header {
 
 instance Binary Header where
     put (Header m v jdo jeo jho jdto) = do
-                                        put m
-                                        put v
-                                        put jdo
-                                        put jeo
-                                        put jho
-                                        put jdto
+        put m
+        put v
+        put jdo
+        put jeo
+        put jho
+        put jdto
 
     get = do
-            m <- get
-            v <- get
-            jdo <- get
-            jeo <- get
-            jho <- get
-            jdto <- get
-            return (Header m v jdo jeo jho jdto)
+        m <- get
+        v <- get
+        jdo <- get
+        jeo <- get
+        jho <- get
+        jdto <- get
+        return (Header m v jdo jeo jho jdto)
 
 make_header :: Word16 -> Int -> Int -> Int -> Header
 make_header version job_dict_len job_env_len job_home_size =
@@ -234,7 +240,7 @@ submit_job = do
                              Http.rqHeaders = [Http.mkHeader Http.HdrContentType "image/jpg",
                                             Http.mkHeader Http.HdrContentLength (show jp_size)
                                    ],
-                             Http.rqBody = BL.unpack contents} --it's evil
+                             Http.rqBody = BL.unpack contents}
     Http.simpleHTTP request >>= Http.getResponseBody
 
 

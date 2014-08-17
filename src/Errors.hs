@@ -1,5 +1,10 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
+{-|
+Module      : Errors
+Description : Define some custom exceptions
+-}
+
 module Errors
     where
 import Control.Exception

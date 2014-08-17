@@ -1,8 +1,13 @@
+{-|
+Module      : Task
+Description : Specify task interface and types of map, reduce, processing functions
+-}
+
 module Task
     where
 import System.IO
 
---started writing the skeleton for a MapReduce job
+--TODO started writing the skeleton for a MapReduce job
 --need to restructure code a little to handle the readers python style
 
 {--data MapReduce k1 v1 k2 v2 k3 v3 a p m = MapReduce {
@@ -30,8 +35,5 @@ type Map m p k1 v1 = m -> p -> [(k1, v1)]
 type Reduce k2 v2 p v3 = [(k2, v2)] -> p -> v3
 type Key = String
 
---map, reduce gathered type
---TODO
---rewrite to Streams
 type Process p = [String] -> Handle -> p -> IO ()
 

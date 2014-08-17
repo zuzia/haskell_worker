@@ -1,4 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Jobutil
+Description : Helper functions for Jobpack module
+-}
+
 
 module Jobutil
     where
@@ -10,10 +15,12 @@ import Control.Applicative ((<$>), (<*>), empty)
 import Control.Monad
 import qualified Data.ByteString.Lazy.Char8 as BL
 
+-- | Handle ddfs inputs differently
 get_effective_inputs :: [String] -> IO [[String]]
 get_effective_inputs inputs =
     mapM ddfs_change inputs
 
+-- | Checks a type of input if it is ddfs tag asks for actual input location
 ddfs_change :: String -> IO [String]
 ddfs_change inpt =
     let (scheme, rest) = split_scheme_loc inpt in
@@ -22,6 +29,7 @@ ddfs_change inpt =
                 return $ map head urls --TODO only first replica location
         else return [inpt]
 
+-- | Asks Disco for inputs associated with a tag
 get_urls :: String -> IO [[String]]
 get_urls tag = do
     let url = tag_url tag

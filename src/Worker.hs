@@ -1,3 +1,11 @@
+{-|
+Module      : Worker
+Description : Map Reduce only logic
+
+This module provides an entry point to compute MapReduce task.
+
+-}
+
 module Worker(
     run_worker -- :: Job k1 v1 k2 v2 v3 m p -> IO ()
 ) where
@@ -15,6 +23,7 @@ import Task
 import Control.Concurrent (threadDelay)
 
 ----------------------------------------------------------------
+--TODO tests, improvements
 --Started multiple replica location handling
 --
 --TODO it would be nice not to block
@@ -75,10 +84,13 @@ import Control.Concurrent (threadDelay)
 
 ----------------------------------------------------------------
 
+-- | Gives replicas' locations for a running task (now, for every input only one replica location is taken)
 get_locations :: [Input] -> [String]
 get_locations inpts =
-    map replica_location $ map (head . replicas) inpts --TODO I take just first replica location
+    map replica_location $ map (head . replicas) inpts --TODO takes just first replica location
 
+-- | This function prepares the environment for running a task's process function:
+-- creates file for output, runs the task function, prepares output message
 run_process_function :: Process p -> FilePath -> String -> [String] -> Task -> Job k1 v1 k2 v2 v3 m p -> IO [Maybe Output]
 run_process_function process_fun pwd file_templ inpt_list task job = do
     (tempFilePath, tempHandle) <- openTempFile pwd file_templ
@@ -88,30 +100,31 @@ run_process_function process_fun pwd file_templ inpt_list task job = do
     hClose tempHandle
     return $ [Just (Output (Label 0) out_path out_size)] --TODO labels?
 
---run it with params
+-- | Runs stage, gets inputs' locations
 run_stage :: FilePath -> String -> Task -> [Input] -> Process p -> Job k1 v1 k2 v2 v3 m p -> IO [Maybe Output]
 run_stage pwd file_templ task inpts process_fun job = do  
     let locs = get_locations inpts
-    read_inpts <- read_inputs task locs --TODO try!!!
+    read_inpts <- read_inputs task locs --TODO try
     -- TODO call init function
     run_process_function process_fun pwd file_templ read_inpts task job--check combine, sort flags + input_hook fun
     -- TODO call done function
 
---TODO change it
+-- | Shuffling stage
 shuffle_out :: [Input] -> IO [Maybe Output]
 shuffle_out inpts =
     return $ map (\(Input _ _ lab repls) -> Just (Output lab (loc repls) 0)) inpts
     where
         loc = \xs -> replica_location (head xs) --TODO just first replica location
 
---iterate over the list of outputs
+-- | Iterates over the list of outputs and passes them to protocol handling part
+-- responsible for sending output message to Disco
 send_outputs :: (Maybe Output) -> MaybeT IO Master_msg
 send_outputs output = do
     case output of 
         Just out -> do exchange_msg $ W_output out
         Nothing -> mzero --TODO
 
---polling for inputs, until done flag
+-- | Polling for inputs, until done flag is met
 get_inputs :: [Int] -> MaybeT IO [Input]
 get_inputs exclude = do
     M_task_input t_input <- exchange_msg $ W_input $ Exclude exclude
@@ -125,19 +138,21 @@ inpt_ids :: Task_input -> [Int]
 inpt_ids t_inpt =
     map input_id (inputs t_inpt)
 
+-- | Helper function, returns prefix for output file and stage process function
 get_stage_tmp :: Task -> Job k1 v1 k2 v2 v3 m p -> (String, Process p)
 get_stage_tmp task job =
     case stage task of
         "map" -> ("map_out_", map_reader job)
         "reduce" -> ("reduce_out_", reduce_reader job)
 
+-- | Expect OK message from Disco
 expect_ok :: MaybeT IO Master_msg
 expect_ok =
     recive >>= (\msg -> case msg of
                             M_ok -> return M_ok
                             _ -> mzero)
 
---TODO error handling!
+-- | Initializes a worker, sends messages in order and runs stage 
 run :: Job k1 v1 k2 v2 v3 m p -> MaybeT IO ()
 run job = do
     pwd <- lift getCurrentDirectory
@@ -153,7 +168,8 @@ run job = do
     exchange_msg W_done
     return ()
 
---TODO errors, and maybe
+--TODO errors and maybe
+-- | Entry point to whole worker logic
 run_worker :: Job k1 v1 k2 v2 v3 m p -> IO ()
 run_worker job = do
     result <- runMaybeT $ run job --TODO Nothing + wrap it

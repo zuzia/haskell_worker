@@ -1,4 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-|
+Module      : Protocol
+Description : Disco worker protocol implementation
+
+Module handles receiving and sending Disco worker protocol messages.
+More information: <http://disco.readthedocs.org/en/latest/howto/worker.html>
+
+MSG format: \<name\> \‘SP\’ \<payload-len\> \‘SP\’ \<payload\> \‘\\n\’
+\'SP\' - single space character
+\<payload-len\> - is the length of the \<payload\> in bytes
+\<payload\> is a JSON formatted term
+
+-}
 
 module Protocol(
     exchange_msg, -- :: Worker_msg -> MaybeT IO Master_msg
@@ -30,12 +43,14 @@ import Control.Monad.Trans.Maybe
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Text as DT
 
+-- | Protocol version
 get_version :: String
 get_version = "1.1"
 
 get_timeout :: Int
 get_timeout = 600 * 10^6 -- in microseconds (because of System.Timeout library)
 
+-- | First message from worker to Disco
 data Worker_info = Worker_info {
     version :: String,
     pid :: Int
@@ -44,6 +59,7 @@ data Worker_info = Worker_info {
 instance ToJSON Worker_info where
      toJSON (Worker_info version pid) = object ["version" .= version, "pid" .= pid]
 
+-- | Task information from Disco
 data Task = Task {
     taskid :: Int,
     master :: String,
@@ -173,6 +189,7 @@ instance FromJSON Task_input where
             otherwise -> empty
     parseJSON _ = empty
 
+-- | Input message from Worker
 data Worker_input_msg = Exclude [Int] | Include [Int] | Empty deriving (Show, Eq)
 
 data Input_err = Input_err {
@@ -186,12 +203,14 @@ instance ToJSON Output_type where
     toJSON Part = String "part"
     toJSON Tag = String "tag"
 
+-- | Output message from Worker
 data Output = Output {
     output_label :: Input_label,
     output_location :: String,
     output_size :: Integer
 } deriving (Show, Eq)
 
+-- | Messages from Worker to Disco
 data Worker_msg
      = W_worker
     | W_task
@@ -204,7 +223,7 @@ data Worker_msg
     | W_fatal String
     | W_ping deriving (Show, Eq)
 
--- messages from Disco to Worker
+-- | Messages from Disco to Worker
 data Master_msg 
     = M_ok
     | M_die
@@ -213,11 +232,6 @@ data Master_msg
     | M_retry [Replica]
     | M_fail
     | M_wait Int deriving (Show, Eq)
-
--- MSG format: <name> ‘SP’ <payload-len> ‘SP’ <payload> ‘\n’
--- 'SP' - single space character
--- <payload-len> - is the length of the <payload> in bytes
--- <payload> is a JSON formatted term
 
 prep_init_worker :: IO BL.ByteString
 prep_init_worker = getProcessID >>= json_w_info
@@ -251,10 +265,12 @@ prepare_msg wm =
 --        otherwise -> ("ERROR", encode $ String "Pattern matching fail, prepare_msg") --TODO
 
 --separated because of impure getProcessPID in prepare init worker
+-- | Sending initiall messge from Worker to Disco
 send_worker :: IO ()
 send_worker = prep_init_worker >>= send1
     where send1 json_msg = hPutStrLn stderr $ unwords ["WORKER", show (BL.length json_msg), BL.unpack json_msg]
 
+-- | General sending function from Worker to Disco
 send :: Worker_msg -> IO ()
 send wm = do
     let (tag, json_msg) = prepare_msg wm
@@ -273,7 +289,7 @@ recive = do
     let [msg, payload_len, payload] = words in_msg
     process_master_msg msg payload
 
--- synchronized message exchange
+-- | Synchronized message exchange
 exchange_msg :: Worker_msg -> MaybeT IO Master_msg
 exchange_msg wm = do
     lift $ send wm

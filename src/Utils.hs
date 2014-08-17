@@ -1,3 +1,8 @@
+{-|
+Module      : Utils
+Description : Some useful functions
+-}
+
 module Utils
     where
 import Task
@@ -11,17 +16,20 @@ import System.Exit
 import System.IO
 import System.Directory
 
+-- | Compare two tuples, key ordering
 kvcompare :: Ord k => (k, a) -> (k, a) -> Bool
 kvcompare (k1,_) (k2, _) = k1==k2
 
+-- | Group list of tuples using keys
 kvgroup ::Ord k => [(k, a)] -> [[(k, a)]]
 kvgroup l = groupBy kvcompare (sortBy (compare `on` fst) l)
 
--- it is fold for summing (key,value) lists with the same key in tuple
+-- | It is fold for summing (key,value) lists with the same key in tuple
 helper_func :: Num a => a -> [(Key, a)] -> (Key, a)
 helper_func acc [(x,y)] = (x,acc+y)
 helper_func acc ((x,y):xs) = helper_func (acc+y) xs
 
+-- | All the functions below are used for invoking unix sort command
 sort_cmd :: FilePath -> String -> String
 sort_cmd filename sort_buffer_size =
     "sort -k 1,1 -T . -S " ++ sort_buffer_size ++ " -o " ++ filename ++ " " ++ filename
