@@ -1,10 +1,6 @@
-* pipeline data flow
-* grouping: group_node, group_label
-* exception handling, that implies implementation of ERROR, FATAL, INPUT_ERR messages from the worker protocol
-* dir scheme handling, test
-* input polling ("more" flag, input exclude, include)
-* System.IO.Streams (?) in Reader
-* reduce stage - sorting inputs
-* util module
-* multiple replicas's locations
+* finish handling of multiple replicas's locations
+* exception logging
+* use io-streams, http-conduit in Reader.hs module
+* finish pipeline data flow
+* finish jobpack utility
 
